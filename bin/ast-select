@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+// vim:set syntax=javascript :
+
+const acorn = require('acorn');
+const escodegen = require('escodegen');
+
+const program = require('commander');
+ 
+program
+  .version(require('../package').version)
+  .option('-a, --ast', 'Output result in javascript ast format')
+  .option(
+    '-s, --selector [selector]',
+    'A dot-seperated list of traversals to perform on the input javascript code.',
+    '.'
+  )
+  .parse(process.argv);
+
+// Aggregate data from stdin. Unfortunately, we need the whole bloc and can't parse it in chunks,
+// which means everything piped into stdin needs to be copied into coniguous memory. ugh.
+let data = '';
+process.stdin.on('data', inp => {
+  data += inp.toString();
+});
+
+process.stdin.on('end', () => {
+  // Convert input code into ast.
+  let comments = [], tokens = [];
+  let ast = acorn.parse(data, {
+    ranges: true,
+    onComment: comments,
+    onToken: tokens,
+  });
+
+  // Performa any traversals indicated in the selector flag
+  program.selector.split('.').filter(i => i.length > 0).forEach(traversal => {
+    if (ast[traversal] === undefined) {
+      console.error(`Performing the traversal '${traversal}' failed.`);
+      process.exit(1);
+    } else {
+      // Perform next traversal step.
+      ast = ast[traversal];
+    }
+  });
+
+  if (ast === undefined) {
+    console.error(`Performing the final ast traversal failed.`);
+    process.exit(1);
+  }
+
+  if (program.ast) {
+    console.log(JSON.stringify(ast, null, 2));
+  } else {
+    try {
+      escodegen.attachComments(ast, comments, tokens);
+    } catch (e) {}
+    console.log(escodegen.generate(ast, {comment: true}));
+  }
+});

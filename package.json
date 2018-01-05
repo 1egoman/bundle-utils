@@ -1,0 +1,10 @@
+{
+  "name": "bundle-tools",
+  "version": "1.0.0",
+  "license": "MIT",
+  "dependencies": {
+    "acorn": "^5.3.0",
+    "commander": "^2.12.2",
+    "escodegen": "^1.9.0"
+  }
+}
