@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+// vim:set syntax=javascript :
+
+const acorn = require('acorn');
+const escodegen = require('escodegen');
+const fs = require('fs');
+const path = require('path');
+
+const program = require('commander');
+ 
+program
+  .version(require('../package').version)
+  .option(
+    '-m, --module-list [selector]',
+    'A dot-seperated list of traversals to perform to locate the javascript structure that contains all modules',
+    '.'
+  )
+  .option(
+    '-o, --output <directory>',
+    `A directory to dump the contents of each module within the bundle, each as a file`
+  )
+  .parse(process.argv);
+
+// Aggregate data from stdin. Unfortunately, we need the whole bloc and can't parse it in chunks,
+// which means everything piped into stdin needs to be copied into coniguous memory. ugh.
+let data = '';
+process.stdin.on('data', inp => {
+  data += inp.toString();
+});
+
+process.stdin.on('end', () => {
+  // Convert input code into ast.
+  let comments = [], tokens = [];
+  let ast = acorn.parse(data, {
+    ranges: true,
+    onComment: comments,
+    onToken: tokens,
+  });
+
+  // Verify --output was passed
+  if (!program.output) {
+    console.error(`Please specify an output directory to dump all modules within with --output`);
+    process.exit(1);
+    return
+  }
+
+  // Locate the module list ast
+  if (!program.moduleList) {
+    console.error('A selector was not specified to find the list of modules in the ast, please pass --module-list.');
+    process.exit(1);
+    return
+  }
+  let moduleList = ast;
+  program.moduleList.split('.').filter(i => i.length > 0).forEach(traversal => {
+    if (moduleList[traversal] === undefined) {
+      console.error(`Performing the traversal '${traversal}' failed.`);
+      process.exit(1);
+    } else {
+      // Perform next traversal step.
+      moduleList = moduleList[traversal];
+    }
+  });
+
+  if (moduleList.type !== 'ArrayExpression') {
+    console.error('--module-list should point to a node of type ArrayExpression.');
+    process.exit(1);
+    return
+  }
+
+  // Loop through each module
+  console.warn(`* Found ${moduleList.elements.length} modules inside the bundle.`);
+  moduleList.elements.forEach((moduleAst, moduleIndex) => {
+    console.warn(`=> ${moduleIndex}`);
+
+    if (moduleAst === null) {
+      console.warn(`  * Module is empty, skiping...`);
+      return
+    }
+
+    const modulePath = path.join(program.output, `${moduleIndex}.js`);
+    const moduleStream = fs.createWriteStream(modulePath);
+    moduleStream.write(escodegen.generate(moduleAst, {comment: true}));
+  });
+
+  /* try { */
+  /*   escodegen.attachComments(ast, comments, tokens); */
+  /* } catch (e) {} */
+});
