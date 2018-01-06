@@ -36,6 +36,7 @@ process.stdin.on('end', () => {
     onComment: comments,
     onToken: tokens,
   });
+  escodegen.attachComments(ast, comments, tokens);
 
   // Verify --output was passed
   if (!program.output) {
@@ -67,22 +68,21 @@ process.stdin.on('end', () => {
     return
   }
 
-  // Loop through each module
-  console.warn(`* Found ${moduleList.elements.length} modules inside the bundle.`);
+  // Loop through each module, and write it's rendered output into a file
+  console.log(`* Found ${moduleList.elements.length} modules inside the bundle.`);
   moduleList.elements.forEach((moduleAst, moduleIndex) => {
-    console.warn(`=> ${moduleIndex}`);
-
-    if (moduleAst === null) {
-      console.warn(`  * Module is empty, skiping...`);
-      return
-    }
+    console.log(`=> ${moduleIndex}`);
 
     const modulePath = path.join(program.output, `${moduleIndex}.js`);
     const moduleStream = fs.createWriteStream(modulePath);
-    moduleStream.write(escodegen.generate(moduleAst, {comment: true}));
+
+    if (moduleAst === null) {
+      console.log(`(module is empty)`);
+      moduleStream.write(`function (module, exports, require) {\n  /* (bundle-utils) module was empty */\n}`);
+      return
+    } else {
+      moduleStream.write(escodegen.generate(moduleAst, {comment: true}));
+    }
   });
 
-  /* try { */
-  /*   escodegen.attachComments(ast, comments, tokens); */
-  /* } catch (e) {} */
 });
